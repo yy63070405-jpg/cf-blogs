@@ -11,9 +11,14 @@ const adminBaseTemplate = (title, content, env, adminPrefix, extraStyles = '') =
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.4/css/all.min.css">
-  <!-- EasyMDE -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js"></script>
+  <!-- CodeMirror 6 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@6/lib/codemirror.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@6/theme/one-dark.css">
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@6/lib/codemirror.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@6/mode/markdown/markdown.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@6/addon/edit/continuelist.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@6/addon/edit/closebrackets.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@6/addon/display/autorefresh.js"></script>
   <style>
     :root {
       --sidebar-width: 260px;
@@ -1522,39 +1527,56 @@ function renderPostForm(post, categories, env, adminPrefix) {
     
     <script>
       (function() {
-        var coverUp = document.getElementById('coverUp');
-        var titleInput = document.querySelector('input[name="title"]');
-        var categorySelect = document.querySelector('select[name="category"]');
-        var tagsInput = document.querySelector('input[name="tags"]');
-        var videoUrlInput = document.querySelector('input[name="videoUrl"]');
-        var statusSelect = document.querySelector('select[name="status"]');
-        var coverImageInput = document.getElementById('coverImageInput');
+        const adminPrefix = "${adminPrefix}";
+        const postId = "${postId}";
+        const draftKey = "post_draft_" + postId;
         
-        var draftKey = "post_draft_" + "${postId}";
+        const titleInput = document.querySelector('input[name="title"]');
+        const categorySelect = document.querySelector('select[name="category"]');
+        const tagsInput = document.querySelector('input[name="tags"]');
+        const videoUrlInput = document.querySelector('input[name="videoUrl"]');
+        const statusSelect = document.querySelector('select[name="status"]');
+        const coverImageInput = document.getElementById('coverImageInput');
         
-        // 初始化 EasyMDE 编辑器
-        const easyMDE = new EasyMDE({
-          element: document.getElementById("editor"),
-          spellChecker: false,
-          autosave: {
-            enabled: true,
-            uniqueId: "post-editor",
-            delay: 1000
-          },
-          toolbar: [
-            "bold", "italic", "heading", "|",
-            "quote", "unordered-list", "ordered-list", "|",
-            "link", "image", "|",
-            "preview", "side-by-side", "fullscreen", "|",
-            "guide"
-          ]
-        });
+        let editor;
+        
+        function initEditor() {
+          if (typeof CodeMirror === 'undefined') {
+            setTimeout(initEditor, 100);
+            return;
+          }
+          
+          editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
+            mode: "markdown",
+            theme: "one-dark",
+            lineNumbers: true,
+            lineWrapping: true,
+            autoCloseBrackets: true,
+            continueComments: "Enter",
+            extraKeys: {
+              "Enter": "newlineAndIndentContinueMarkdownList",
+              "Tab": function(cm) { cm.replaceSelection("  ", "end"); }
+            }
+          });
+          
+          editor.setSize("100%", 500);
+          loadDraft();
+        }
+        
+        function getContent() {
+          return editor ? editor.getValue() : '';
+        }
+        
+        function setContent(content) {
+          if (editor) {
+            editor.setValue(content);
+          }
+        }
         
         function saveDraft() {
-          var content = easyMDE.value();
-          var draft = {
+          const draft = {
             title: titleInput.value,
-            content: content,
+            content: getContent(),
             category: categorySelect.value,
             tags: tagsInput.value,
             videoUrl: videoUrlInput.value,
@@ -1566,12 +1588,12 @@ function renderPostForm(post, categories, env, adminPrefix) {
         }
         
         function loadDraft() {
-          var saved = localStorage.getItem(draftKey);
+          const saved = localStorage.getItem(draftKey);
           if (saved) {
             try {
-              var draft = JSON.parse(saved);
+              const draft = JSON.parse(saved);
               if (draft.title) titleInput.value = draft.title;
-              if (draft.content) easyMDE.value(draft.content);
+              if (draft.content) setContent(draft.content);
               if (draft.category) categorySelect.value = draft.category;
               if (draft.tags) tagsInput.value = draft.tags;
               if (draft.videoUrl) videoUrlInput.value = draft.videoUrl;
@@ -1581,76 +1603,74 @@ function renderPostForm(post, categories, env, adminPrefix) {
           }
         }
         
+        if (document.readyState === 'complete') {
+          initEditor();
+        } else {
+          window.addEventListener('load', initEditor);
+        }
+        
         document.querySelector('form').addEventListener('submit', function() {
+          if (editor) {
+            document.getElementById("editor").value = getContent();
+          }
           localStorage.removeItem(draftKey);
         });
         
-        var mdUploadFile = document.getElementById('mdUploadFile');
+        const mdUploadFile = document.getElementById('mdUploadFile');
         if (mdUploadFile) {
-          mdUploadFile.addEventListener('change', function() {
-            handleMdUpload(this);
+          mdUploadFile.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(event) {
+              const content = event.target.result;
+              const lines = content.split('\n');
+              let title = '';
+              let bodyStart = 0;
+              for (let i = 0; i < Math.min(10, lines.length); i++) {
+                const line = lines[i].trim();
+                if (line.indexOf('# ') === 0) {
+                  title = line.substring(2).trim();
+                  bodyStart = i + 1;
+                  break;
+                }
+              }
+              if (!title) title = file.name.replace(/\.(md|markdown|txt)$/i, '');
+              const body = lines.slice(bodyStart).join('\n').trim();
+              titleInput.value = title;
+              setContent(body);
+              alert('文件导入成功！');
+            };
+            reader.readAsText(file);
+            e.target.value = '';
           });
         }
         
-        function handleMdUpload(input) {
-          if (!input.files[0]) return;
-          var file = input.files[0];
-          var reader = new FileReader();
-          reader.onload = function(e) {
-            var content = e.target.result;
-            var lines = content.split('\n');
-            var title = '';
-            var bodyStart = 0;
-            for (var i = 0; i < Math.min(10, lines.length); i++) {
-              var line = lines[i].trim();
-              if (line.indexOf('# ') === 0) {
-                title = line.substring(2).trim();
-                bodyStart = i + 1;
-                break;
-              }
-            }
-            if (!title) {
-              title = file.name.replace(/\.(md|markdown|txt)$/i, '');
-            }
-            var body = lines.slice(bodyStart).join('\n').trim();
-            titleInput.value = title;
-            easyMDE.value(body);
-            alert('文件已导入！请检查并补充其他信息。');
-          };
-          reader.readAsText(file);
-          input.value = '';
-        }
-        
-        loadDraft();
         setInterval(saveDraft, 30000);
       })();
     </script>
   `;
   
   const extraStyles = `
-    /* EasyMDE 编辑器样式 */
-    .EasyMDEContainer {
-      margin-bottom: 20px;
-    }
+    /* CodeMirror 编辑器样式 */
     .CodeMirror {
-      min-height: 400px;
+      min-height: 500px;
       border: 1px solid var(--border);
       border-radius: 8px;
-      font-family: 'Consolas', 'Monaco', monospace;
+      font-family: 'Consolas', 'Monaco', 'Fira Code', monospace;
       font-size: 14px;
+      line-height: 1.6;
     }
-    .editor-toolbar {
-      border: 1px solid var(--border);
-      border-bottom: none;
-      border-radius: 8px 8px 0 0;
-      background: var(--bg-content);
+    .CodeMirror-scroll {
+      min-height: 500px;
     }
-    .editor-toolbar button {
-      color: var(--text-dark);
+    .CodeMirror-gutters {
+      background: #282c34;
+      border-right: 1px solid #3e4451;
+      border-radius: 8px 0 0 8px;
     }
-    .editor-toolbar button:hover {
-      background: var(--primary);
-      color: white;
+    .CodeMirror-linenumber {
+      color: #5c6370;
     }
   `;
   
