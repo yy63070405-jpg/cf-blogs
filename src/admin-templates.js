@@ -1497,7 +1497,7 @@ function renderPostForm(post, categories, env, adminPrefix) {
           
           <div class="form-group">
             <label class="form-label">文章内容（支持 Markdown）</label>
-            <textarea id="editor" name="content">${postContentRaw ? postContentRaw.replace(/&/g, '&amp;').replace(/"/g, '&quot;') : ''}</textarea>
+            <textarea id="editor" name="content">${postContent}</textarea>
           </div>
           
           <div class="form-group">
@@ -1530,7 +1530,7 @@ function renderPostForm(post, categories, env, adminPrefix) {
         var statusSelect = document.querySelector('select[name="status"]');
         var coverImageInput = document.getElementById('coverImageInput');
         
-        var draftKey = "post_draft_${postId}";
+        var draftKey = "post_draft_" + "${postId}";
         
         // 初始化 EasyMDE 编辑器
         const easyMDE = new EasyMDE({
