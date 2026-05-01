@@ -1585,9 +1585,12 @@ function renderPostForm(post, categories, env, adminPrefix) {
           localStorage.removeItem(draftKey);
         });
         
-        document.getElementById('mdUploadFile').addEventListener('change', function() {
-          handleMdUpload(this);
-        });
+        var mdUploadFile = document.getElementById('mdUploadFile');
+        if (mdUploadFile) {
+          mdUploadFile.addEventListener('change', function() {
+            handleMdUpload(this);
+          });
+        }
         
         function handleMdUpload(input) {
           if (!input.files[0]) return;
